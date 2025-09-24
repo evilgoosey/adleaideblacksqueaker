@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Cicada Button</title>
+  <style>
+    body {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: 1em;
+      height: 100vh;
+      margin: 0;
+      background: #000;
+      font-family: monospace;
+    }
+
+    button {
+      background: black;
+      border: none;
+      padding: 0;
+      cursor: pointer;
+      font-family: monospace;
+      text-align: left;
+    }
+
+    button:disabled {
+      cursor: default;
+      opacity: 0.6;
+    }
+
+    pre {
+      margin: 0;
+      font-size: 14px;
+      line-height: 1;
+      color: white;
+    }
+input[type="range"] {
+  -webkit-appearance: none; /* remove default styling */
+  width: 200px;
+  height: 6px;
+  background: #333; /* dark track */
+  border-radius: 3px;
+  outline: none;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  background: #fff; /* light thumb */
+  border-radius: 50%;
+  cursor: pointer;
+  border: 1px solid #aaa;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  background: #fff;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 1px solid #aaa;
+}
+
+
+    #volumeControl {
+      width: 200px;
+    }
+  </style>
+</head>
+<body>
+
+<button id="cicadaBtn"></button>
+<input type="range" id="volumeControl" min="0" max="1" step="0.01" value="0.5">
+
+<script>
+let audioCtx;
+const alternateChance = 0.2; // 20% chance for alternate call
+let carrierFrequency;
+
+// Set unique carrier pitch at page load
+window.addEventListener('load', () => {
+  carrierFrequency = 10800 + Math.random() * (13200 - 10800);
+});
+
+const btn = document.getElementById('cicadaBtn');
+
+const normalPre = `
+<pre style="margin:0; font-size:14px; line-height:1;">
+   ._.
+  (} {)
+  /\\ /\\
+ /| | |\\
+ | \\ / |
+ |_/V\\_|
+</pre>
+`;
+
+const playingPre = `
+<pre style="margin:0; font-size:14px; line-height:1;">
+   ._.
+  (} {)
+  /\\ /\\
+ /|/~\\|\\
+( /\\~/\\ )
+    V 
+</pre>
+`;
+
+btn.innerHTML = normalPre;
+
+function playCicada() {
+  const burstCount = 6 + Math.floor(Math.random() * 7); // 6–12 bursts
+  createCicadaSound({
+    burstCount,
+    burstDuration: 0.6,
+    gap: 0.2
+  });
+}
+
+function playAlternateCicada() {
+  const longBurstDuration = 4 + Math.random() * 2; // 4–6s
+  createCicadaSound({
+    burstCount: 5,
+    burstDurations: [longBurstDuration, 0.3, 0.3, 0.3, 0.3],
+    gaps: [0.2, 0.2, 0.2, 0.2, 0.2]
+  });
+}
+
+function createCicadaSound({ burstCount, burstDuration, gap, burstDurations, gaps }) {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const now = audioCtx.currentTime;
+
+  // Master gain
+  const master = audioCtx.createGain();
+  master.gain.value = document.getElementById('volumeControl').value;
+  master.connect(audioCtx.destination);
+
+  // Carrier oscillator
+  const osc = audioCtx.createOscillator();
+  osc.type = "sawtooth";
+  osc.frequency.value = carrierFrequency;
+  const oscGain = audioCtx.createGain();
+  oscGain.gain.value = 0.1;
+  osc.connect(oscGain);
+
+  // Tremolo
+  const lfo = audioCtx.createOscillator();
+  lfo.type = "square";
+  const lfoGain = audioCtx.createGain();
+  lfoGain.gain.value = 0.05;
+  lfo.connect(lfoGain);
+  lfoGain.connect(oscGain.gain);
+
+  // Noise
+  const bufferSize = 2 * audioCtx.sampleRate;
+  const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+  const data = noiseBuffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+  const noise = audioCtx.createBufferSource();
+  noise.buffer = noiseBuffer;
+  noise.loop = true;
+  const noiseFilter = audioCtx.createBiquadFilter();
+  noiseFilter.type = "bandpass";
+  noiseFilter.frequency.value = 12000;
+  noiseFilter.Q.value = 6;
+  const noiseGain = audioCtx.createGain();
+  noiseGain.gain.value = 0.04;
+  noise.connect(noiseFilter);
+  noiseFilter.connect(noiseGain);
+
+  // Burst LP filter
+  const lpFilter = audioCtx.createBiquadFilter();
+  lpFilter.type = "lowpass";
+
+  // Overall LP & HP filters
+  const overallLP = audioCtx.createBiquadFilter();
+  overallLP.type = "lowpass";
+  overallLP.frequency.value = 8000;
+  const overallHP = audioCtx.createBiquadFilter();
+  overallHP.type = "highpass";
+  overallHP.frequency.value = 8000;
+
+  // Mix
+  oscGain.connect(lpFilter);
+  noiseGain.connect(lpFilter);
+  lpFilter.connect(overallLP);
+  overallLP.connect(overallHP);
+  overallHP.connect(master);
+
+  // Compute durations
+  const durations = burstDurations || Array(burstCount).fill(burstDuration);
+  const gapsArr = gaps || Array(burstCount).fill(gap);
+
+  let t = now;
+  for (let i = 0; i < burstCount; i++) {
+    const start = t;
+    const end = start + durations[i];
+
+    // Amplitude envelope
+    master.gain.setValueAtTime(0, start);
+    master.gain.linearRampToValueAtTime(document.getElementById('volumeControl').value, start + 0.02);
+    master.gain.setValueAtTime(document.getElementById('volumeControl').value, end - 0.02);
+    master.gain.linearRampToValueAtTime(0, end);
+
+    // LP filter sweep
+    lpFilter.frequency.setValueAtTime(7000, start);
+    lpFilter.frequency.linearRampToValueAtTime(15000, end);
+
+    // Detune
+    const detune = (Math.random() - 0.5) * 20;
+    osc.detune.setValueAtTime(detune, start);
+
+    // Tremolo warm-up
+    const baseFreq = 80 + Math.random() * 6;
+    const finalFreq = baseFreq * 1.4;
+    lfo.frequency.setValueAtTime(5, start);
+    lfo.frequency.linearRampToValueAtTime(baseFreq, start + 0.1);
+    lfo.frequency.setValueAtTime(baseFreq, start + 0.2);
+    lfo.frequency.linearRampToValueAtTime(finalFreq, end);
+
+    t = end + gapsArr[i];
+  }
+
+  osc.start(now);
+  lfo.start(now);
+  noise.start(now);
+
+  osc.stop(t);
+  lfo.stop(t);
+  noise.stop(t);
+}
+
+// Handle button press
+btn.addEventListener('click', () => {
+  btn.disabled = true;
+  btn.innerHTML = playingPre;
+
+  if (Math.random() < alternateChance) {
+    playAlternateCicada();
+  } else {
+    playCicada();
+  }
+
+  // Re-enable button after 5–15s
+  const delay = 5000 + Math.random() * 10000;
+  setTimeout(() => {
+    btn.disabled = false;
+    btn.innerHTML = normalPre;
+  }, delay);
+});
+
+// Volume control
+document.getElementById('volumeControl').addEventListener('input', e => {
+  // master gain will automatically use slider for next bursts
+});
+</script>
+</body>
+</html>
