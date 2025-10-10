@@ -7,13 +7,36 @@
     body {
       display: flex;
       flex-direction: column;
-      justify-content: center;
+      justify-content: space-between;
       align-items: center;
-      gap: 1em;
       height: 100vh;
       margin: 0;
       background: #000;
       font-family: monospace;
+      color: #888;
+    }
+
+    header, footer {
+      text-align: center;
+      padding: 1em;
+      width: 100%;
+    }
+
+    footer a {
+      color: #888;
+      text-decoration: none;
+    }
+
+    footer a:hover {
+      text-decoration: underline;
+      color: #aaa;
+    }
+
+    main {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1em;
     }
 
     button {
@@ -36,44 +59,55 @@
       line-height: 1;
       color: white;
     }
-input[type="range"] {
-  -webkit-appearance: none; /* remove default styling */
-  width: 200px;
-  height: 6px;
-  background: #333; /* dark track */
-  border-radius: 3px;
-  outline: none;
-}
 
-input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 16px;
-  height: 16px;
-  background: #fff; /* light thumb */
-  border-radius: 50%;
-  cursor: pointer;
-  border: 1px solid #aaa;
-}
-
-input[type="range"]::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
-  background: #fff;
-  border-radius: 50%;
-  cursor: pointer;
-  border: 1px solid #aaa;
-}
-
-
-    #volumeControl {
+    input[type="range"] {
+      -webkit-appearance: none;
       width: 200px;
+      height: 6px;
+      background: #333;
+      border-radius: 3px;
+      outline: none;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      background: #fff;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 1px solid #aaa;
+    }
+
+    input[type="range"]::-moz-range-thumb {
+      width: 16px;
+      height: 16px;
+      background: #fff;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 1px solid #aaa;
     }
   </style>
 </head>
 <body>
 
-<button id="cicadaBtn"></button>
-<input type="range" id="volumeControl" min="0" max="1" step="0.01" value="0.5">
+  <header>
+    <h1 style="font-weight: normal; font-size: 1.2em; margin: 0;">The Black Squeaker Project</h1>
+  </header>
+
+  <main>
+    <button id="cicadaBtn"></button>
+    <input type="range" id="volumeControl" min="0" max="1" step="0.01" value="0.5">
+  </main>
+
+  <footer>
+    <a href="https://www.eventbrite.com.au/e/the-black-squeaker-project-tickets-1487374871279" target="_blank">
+View Concert & Tickets 
+</a><br>
+<a href="https://www.researchgate.net/publication/384767949_A_NEW_SPECIES_OF_ATRAPSALTA_OWEN_AND_MOULDS_2016_HEMIPTERA_CICADIDAE_FROM_SOUTH_AUSTRALIA" target="_blank"> 
+Atrapsalta AUDAX  (Popple 2024)
+</a>
+  </footer>
 
 <script>
 let audioCtx;
@@ -88,7 +122,7 @@ window.addEventListener('load', () => {
 const btn = document.getElementById('cicadaBtn');
 
 const normalPre = `
-<pre style="margin:0; font-size:14px; line-height:1;">
+<pre>
    ._.
   (} {)
   /\\ /\\
@@ -99,7 +133,7 @@ const normalPre = `
 `;
 
 const playingPre = `
-<pre style="margin:0; font-size:14px; line-height:1;">
+<pre>
    ._.
   (} {)
   /\\ /\\
@@ -113,19 +147,38 @@ btn.innerHTML = normalPre;
 
 function playCicada() {
   const burstCount = 6 + Math.floor(Math.random() * 7); // 6–12 bursts
+
+  // Helper to vary a value by ±percentage
+  const vary = (value, amount = 0.1) => value * (1 + (Math.random() * 2 - 1) * amount);
+
+  // Generate slightly different durations for each burst and gap
+  const burstDurations = Array.from({ length: burstCount }, () => vary(0.6, 0.15)); // ±15%
+  const gaps = Array.from({ length: burstCount }, () => vary(0.2, 0.2));             // ±20%
+
   createCicadaSound({
     burstCount,
-    burstDuration: 0.6,
-    gap: 0.2
+    burstDurations,
+    gaps
   });
 }
 
 function playAlternateCicada() {
   const longBurstDuration = 4 + Math.random() * 2; // 4–6s
+
+  const vary = (value, amount = 0.1) => value * (1 + (Math.random() * 2 - 1) * amount);
+
+  // Each burst and gap gets slight individual variation
+  const burstDurations = [
+    vary(longBurstDuration, 0.05), // keep long one mostly stable
+    ...Array.from({ length: 4 }, () => vary(0.3, 0.15)) // ±15% for shorter bursts
+  ];
+
+  const gaps = Array.from({ length: 5 }, () => vary(0.2, 0.2)); // ±20%
+
   createCicadaSound({
     burstCount: 5,
-    burstDurations: [longBurstDuration, 0.3, 0.3, 0.3, 0.3],
-    gaps: [0.2, 0.2, 0.2, 0.2, 0.2]
+    burstDurations,
+    gaps
   });
 }
 
@@ -178,10 +231,10 @@ function createCicadaSound({ burstCount, burstDuration, gap, burstDurations, gap
   // Overall LP & HP filters
   const overallLP = audioCtx.createBiquadFilter();
   overallLP.type = "lowpass";
-  overallLP.frequency.value = 8000;
+  overallLP.frequency.value = 5000;
   const overallHP = audioCtx.createBiquadFilter();
   overallHP.type = "highpass";
-  overallHP.frequency.value = 8000;
+  overallHP.frequency.value = 7000;
 
   // Mix
   oscGain.connect(lpFilter);
@@ -250,11 +303,6 @@ btn.addEventListener('click', () => {
     btn.disabled = false;
     btn.innerHTML = normalPre;
   }, delay);
-});
-
-// Volume control
-document.getElementById('volumeControl').addEventListener('input', e => {
-  // master gain will automatically use slider for next bursts
 });
 </script>
 </body>
