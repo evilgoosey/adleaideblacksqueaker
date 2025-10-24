@@ -62,6 +62,8 @@
 
     input[type="range"] {
       -webkit-appearance: none;
+      -moz-appearance: none;
+      appearance: none;
       width: 200px;
       height: 6px;
       background: #333;
@@ -110,13 +112,59 @@ Atrapsalta AUDAX  (Popple 2024)
   </footer>
 
 <script>
+// Audio Configuration
+const CICADA_CONFIG = {
+  carrier: {
+    baseFreq: 10800,
+    maxFreq: 13200,
+    minFreq: 10800,
+    oscType: "sawtooth",
+    gain: 0.05,
+    detuneRange: 20 // ±20 cents
+  },
+  tremolo: {
+    startFreq: 5,
+    baseFreq: 150,
+    freqVariation: 10, // Random addition to baseFreq
+    finalMultiplier: 1.4,
+    depth: 0.05
+  },
+  noise: {
+    bandpassFreq: 8000,
+    bandpassQ: 8,
+    gain: 0.06
+  },
+  filters: {
+    lowpass: 9000,
+    highpass: 3000
+  },
+  timing: {
+    minBursts: 6,
+    maxBursts: 12,
+    burstDuration: 0.6,
+    burstVariation: 0.15, // ±15%
+    gapDuration: 0.2,
+    gapVariation: 0.2, // ±20%
+    alternateChance: 0.2, // 20% chance
+    alternateLongBurst: {
+      minDuration: 4,
+      maxDuration: 6,
+      variation: 0.05
+    },
+    alternateShortBurst: {
+      duration: 0.3,
+      variation: 0.15
+    }
+  }
+};
+
 let audioCtx;
-const alternateChance = 0.2; // 20% chance for alternate call
 let carrierFrequency;
 
-// Set unique carrier pitch at page load
+// Update carrier frequency calculation using config
 window.addEventListener('load', () => {
-  carrierFrequency = 10800 + Math.random() * (13200 - 10800);
+  carrierFrequency = CICADA_CONFIG.carrier.baseFreq + 
+    Math.random() * (CICADA_CONFIG.carrier.maxFreq - CICADA_CONFIG.carrier.minFreq);
 });
 
 const btn = document.getElementById('cicadaBtn');
@@ -146,8 +194,9 @@ const playingPre = `
 btn.innerHTML = normalPre;
 
 function playCicada() {
-  const burstCount = 6 + Math.floor(Math.random() * 7); // 6–12 bursts
-
+  const burstCount = CICADA_CONFIG.timing.minBursts + 
+    Math.floor(Math.random() * (CICADA_CONFIG.timing.maxBursts - CICADA_CONFIG.timing.minBursts));
+    
   // Helper to vary a value by ±percentage
   const vary = (value, amount = 0.1) => value * (1 + (Math.random() * 2 - 1) * amount);
 
@@ -193,17 +242,17 @@ function createCicadaSound({ burstCount, burstDuration, gap, burstDurations, gap
 
   // Carrier oscillator
   const osc = audioCtx.createOscillator();
-  osc.type = "sawtooth";
+  osc.type = CICADA_CONFIG.carrier.oscType;
   osc.frequency.value = carrierFrequency;
   const oscGain = audioCtx.createGain();
-  oscGain.gain.value = 0.1;
+  oscGain.gain.value = CICADA_CONFIG.carrier.gain;
   osc.connect(oscGain);
 
   // Tremolo
   const lfo = audioCtx.createOscillator();
   lfo.type = "square";
   const lfoGain = audioCtx.createGain();
-  lfoGain.gain.value = 0.05;
+  lfoGain.gain.value = CICADA_CONFIG.tremolo.depth;
   lfo.connect(lfoGain);
   lfoGain.connect(oscGain.gain);
 
@@ -217,10 +266,10 @@ function createCicadaSound({ burstCount, burstDuration, gap, burstDurations, gap
   noise.loop = true;
   const noiseFilter = audioCtx.createBiquadFilter();
   noiseFilter.type = "bandpass";
-  noiseFilter.frequency.value = 12000;
-  noiseFilter.Q.value = 6;
+  noiseFilter.frequency.value = CICADA_CONFIG.noise.bandpassFreq;
+  noiseFilter.Q.value = CICADA_CONFIG.noise.bandpassQ;
   const noiseGain = audioCtx.createGain();
-  noiseGain.gain.value = 0.04;
+  noiseGain.gain.value = CICADA_CONFIG.noise.gain;
   noise.connect(noiseFilter);
   noiseFilter.connect(noiseGain);
 
@@ -231,17 +280,28 @@ function createCicadaSound({ burstCount, burstDuration, gap, burstDurations, gap
   // Overall LP & HP filters
   const overallLP = audioCtx.createBiquadFilter();
   overallLP.type = "lowpass";
-  overallLP.frequency.value = 5000;
+  overallLP.frequency.value = CICADA_CONFIG.filters.lowpass;
   const overallHP = audioCtx.createBiquadFilter();
   overallHP.type = "highpass";
-  overallHP.frequency.value = 7000;
+  overallHP.frequency.value = CICADA_CONFIG.filters.highpass;
 
-  // Mix
-  oscGain.connect(lpFilter);
-  noiseGain.connect(lpFilter);
-  lpFilter.connect(overallLP);
-  overallLP.connect(overallHP);
-  overallHP.connect(master);
+  // Set up modulation chain
+  lfoGain.connect(oscGain.gain);    // Tremolo modulates carrier
+  lfoGain.connect(noiseGain.gain);  // Tremolo also modulates noise
+
+  // Carrier path
+  osc.connect(oscGain);
+  oscGain.connect(lpFilter);        // Sweep filter for carrier
+
+  // Noise path
+  noise.connect(noiseFilter);       // Bandpass first
+  noiseFilter.connect(noiseGain);
+  noiseGain.connect(lpFilter);      // Through same sweep filter
+
+  // Final mixing chain
+  lpFilter.connect(overallLP);      // Sweep -> LP
+  overallLP.connect(overallHP);     // LP -> HP
+  overallHP.connect(master);        // HP -> Master
 
   // Compute durations
   const durations = burstDurations || Array(burstCount).fill(burstDuration);
@@ -267,8 +327,8 @@ function createCicadaSound({ burstCount, burstDuration, gap, burstDurations, gap
     osc.detune.setValueAtTime(detune, start);
 
     // Tremolo warm-up
-    const baseFreq = 80 + Math.random() * 6;
-    const finalFreq = baseFreq * 1.4;
+    const baseFreq = 120 + Math.random() * 10;
+    const finalFreq = baseFreq * 1.2;
     lfo.frequency.setValueAtTime(5, start);
     lfo.frequency.linearRampToValueAtTime(baseFreq, start + 0.1);
     lfo.frequency.setValueAtTime(baseFreq, start + 0.2);
@@ -291,7 +351,7 @@ btn.addEventListener('click', () => {
   btn.disabled = true;
   btn.innerHTML = playingPre;
 
-  if (Math.random() < alternateChance) {
+  if (Math.random() < CICADA_CONFIG.timing.alternateChance) {
     playAlternateCicada();
   } else {
     playCicada();
